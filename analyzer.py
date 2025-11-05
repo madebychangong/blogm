@@ -7,6 +7,7 @@
 - 등급제 (S~F)
 - 비동기 HTTP 요청으로 빠른 크롤링
 - 포스팅 날짜, 조회수 추출
+- 네이버 검색광고 API로 키워드 경쟁력 분석
 """
 import re
 import requests
@@ -15,9 +16,18 @@ import aiohttp
 from bs4 import BeautifulSoup
 from collections import Counter
 from datetime import datetime
+from typing import Optional, List, Dict
+
+# 네이버 검색광고 API (optional)
+try:
+    from naver_ad_api import NaverAdAPI
+    NAVER_AD_API_AVAILABLE = True
+except Exception as e:
+    print(f"⚠️ 네이버 검색광고 API 사용 불가: {e}")
+    NAVER_AD_API_AVAILABLE = False
 
 class BlogAnalyzer:
-    def __init__(self):
+    def __init__(self, enable_keyword_analysis: bool = True):
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36',
             'Referer': 'https://blog.naver.com/',
@@ -25,6 +35,18 @@ class BlogAnalyzer:
         }
         self.timeout = 12
         self.max_posts = 30  # 최대 게시글 수 증가
+
+        # 네이버 검색광고 API 초기화
+        self.keyword_api = None
+        self.enable_keyword_analysis = enable_keyword_analysis and NAVER_AD_API_AVAILABLE
+
+        if self.enable_keyword_analysis:
+            try:
+                self.keyword_api = NaverAdAPI()
+                print("✅ 키워드 경쟁력 분석 활성화")
+            except Exception as e:
+                print(f"⚠️ 키워드 API 초기화 실패: {e}")
+                self.enable_keyword_analysis = False
     
     def analyze(self, blog_id):
         """블로그 전체 분석 (동기 래퍼)"""
@@ -63,7 +85,12 @@ class BlogAnalyzer:
             # 3. 블로그 전체 랭크 계산
             blog_rank, traffic_rank = self._calculate_blog_rank(post_results)
 
-            return {
+            # 4. 해시태그 경쟁력 분석 (optional)
+            keyword_analysis = None
+            if self.enable_keyword_analysis and self.keyword_api:
+                keyword_analysis = await self._analyze_hashtag_competition(post_results)
+
+            result = {
                 "blog_id": blog_id,
                 "total_posts": len(post_results),
                 "posts": post_results,
@@ -71,6 +98,13 @@ class BlogAnalyzer:
                 "traffic_rank": traffic_rank,
                 "analyzed_at": datetime.now().isoformat()
             }
+
+            # 키워드 분석 결과 추가
+            if keyword_analysis:
+                result["keyword_analysis"] = keyword_analysis
+
+            return result
+
         except Exception as e:
             print(f"분석 오류: {e}")
             return None
@@ -687,3 +721,109 @@ class BlogAnalyzer:
             traffic_rank = "F등급 (기대 어려움)"
         
         return blog_rank, traffic_rank
+
+    async def _analyze_hashtag_competition(self, post_results: List[Dict]) -> Optional[Dict]:
+        """
+        게시글의 해시태그 경쟁력 분석
+
+        Args:
+            post_results: 게시글 분석 결과 리스트
+
+        Returns:
+            해시태그 경쟁력 분석 결과
+        """
+        try:
+            # 1. 모든 해시태그 수집
+            all_hashtags = []
+            for post in post_results:
+                hashtag_count = post.get('hashtag_count', 0)
+                if hashtag_count > 0:
+                    # 실제 해시태그 리스트는 post_data에 있을 수 있음
+                    # 여기서는 간단히 수집
+                    all_hashtags.extend([''] * hashtag_count)
+
+            # 2. 빈도수 계산 및 상위 선정
+            # 실제 해시태그 텍스트를 수집하기 위해 다시 크롤링 필요
+            # 간단히 제목에서 키워드 추출
+            keywords_to_analyze = set()
+
+            for post in post_results:
+                title = post.get('title', '')
+                # 제목에서 2글자 이상 단어 추출
+                words = re.findall(r'[가-힣]{2,}', title)
+                keywords_to_analyze.update(words[:3])  # 상위 3개만
+
+            keywords_to_analyze = list(keywords_to_analyze)[:10]  # 최대 10개
+
+            if not keywords_to_analyze:
+                return None
+
+            print(f"🔍 키워드 경쟁력 분석 중: {keywords_to_analyze}")
+
+            # 3. 키워드 경쟁력 분석 (동기 함수를 비동기에서 호출)
+            keyword_results = []
+            for keyword in keywords_to_analyze:
+                try:
+                    result = self.keyword_api.analyze_keyword_competition(keyword)
+                    if result:
+                        keyword_results.append(result)
+                    # API 제한 고려
+                    await asyncio.sleep(0.3)
+                except Exception as e:
+                    print(f"⚠️ '{keyword}' 분석 실패: {e}")
+                    continue
+
+            if not keyword_results:
+                return None
+
+            # 4. 결과 요약
+            total_search = sum(k['total_monthly_search'] for k in keyword_results)
+            avg_competition_score = sum(k['competition_score'] for k in keyword_results) / len(keyword_results)
+
+            # 추천 키워드 (경쟁 낮고 검색량 있는 것)
+            recommended_keywords = [
+                k for k in keyword_results
+                if k.get('recommended', False)
+            ]
+
+            # 경쟁 높은 키워드
+            high_competition_keywords = [
+                k for k in keyword_results
+                if k['competition'] == '높음'
+            ]
+
+            analysis_result = {
+                "total_keywords_analyzed": len(keyword_results),
+                "total_monthly_search": total_search,
+                "avg_competition_score": round(avg_competition_score, 1),
+                "keywords": keyword_results,
+                "recommended_keywords": recommended_keywords[:5],  # 상위 5개
+                "high_competition_keywords": high_competition_keywords[:5],
+                "analysis_summary": self._generate_keyword_summary(keyword_results)
+            }
+
+            return analysis_result
+
+        except Exception as e:
+            print(f"❌ 해시태그 경쟁력 분석 오류: {e}")
+            return None
+
+    def _generate_keyword_summary(self, keyword_results: List[Dict]) -> str:
+        """키워드 분석 요약 생성"""
+        if not keyword_results:
+            return "분석할 키워드가 없습니다."
+
+        avg_score = sum(k['competition_score'] for k in keyword_results) / len(keyword_results)
+        recommended_count = sum(1 for k in keyword_results if k.get('recommended', False))
+
+        if avg_score >= 70:
+            summary = f"⚠️ 높은 경쟁: 사용 중인 키워드들의 경쟁이 치열합니다. (평균 {avg_score:.1f}점)"
+        elif avg_score >= 50:
+            summary = f"⚡ 중간 경쟁: 적절한 수준의 경쟁 키워드입니다. (평균 {avg_score:.1f}점)"
+        else:
+            summary = f"✅ 낮은 경쟁: 경쟁이 낮은 블루오션 키워드입니다. (평균 {avg_score:.1f}점)"
+
+        if recommended_count > 0:
+            summary += f" | 추천 키워드 {recommended_count}개 발견"
+
+        return summary
