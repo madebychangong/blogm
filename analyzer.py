@@ -5,9 +5,13 @@
 - 모바일 PostView로 안정적 파싱
 - 세분화된 점수 체계 (SEO + 콘텐츠)
 - 등급제 (S~F)
+- 비동기 HTTP 요청으로 빠른 크롤링
+- 포스팅 날짜, 조회수 추출
 """
 import re
 import requests
+import asyncio
+import aiohttp
 from bs4 import BeautifulSoup
 from collections import Counter
 from datetime import datetime
@@ -20,28 +24,45 @@ class BlogAnalyzer:
             'Accept-Language': 'ko-KR,ko;q=0.9'
         }
         self.timeout = 12
+        self.max_posts = 30  # 최대 게시글 수 증가
     
     def analyze(self, blog_id):
-        """블로그 전체 분석"""
+        """블로그 전체 분석 (동기 래퍼)"""
+        try:
+            # 비동기 함수를 동기적으로 실행
+            return asyncio.run(self._analyze_async(blog_id))
+        except Exception as e:
+            print(f"분석 오류: {e}")
+            return None
+
+    async def _analyze_async(self, blog_id):
+        """블로그 전체 분석 (비동기)"""
         try:
             # 1. 게시글 URL 수집 (다중 폴백)
-            post_urls = self._get_recent_post_urls(blog_id)
+            post_urls = await self._get_recent_post_urls_async(blog_id)
             if not post_urls:
                 return None
-            
-            # 2. 각 게시글 분석
+
+            # 2. 각 게시글 병렬 분석 (최대 30개)
             post_results = []
-            for url in post_urls[:10]:  # 최대 10개
-                post_data = self._analyze_single_post(url, blog_id)
-                if post_data:
-                    post_results.append(post_data)
-            
+            async with aiohttp.ClientSession(headers=self.headers) as session:
+                tasks = [
+                    self._analyze_single_post_async(session, url, blog_id)
+                    for url in post_urls[:self.max_posts]
+                ]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                # 성공한 결과만 추가
+                for result in results:
+                    if result and not isinstance(result, Exception):
+                        post_results.append(result)
+
             if not post_results:
                 return None
-            
+
             # 3. 블로그 전체 랭크 계산
             blog_rank, traffic_rank = self._calculate_blog_rank(post_results)
-            
+
             return {
                 "blog_id": blog_id,
                 "total_posts": len(post_results),
@@ -55,12 +76,23 @@ class BlogAnalyzer:
             return None
     
     def _fetch(self, url, timeout=None):
-        """HTTP 요청"""
+        """HTTP 요청 (동기)"""
         res = requests.get(url, headers=self.headers, timeout=timeout or self.timeout)
         if not res.encoding or res.encoding.lower() in ("iso-8859-1", "ansi"):
             res.encoding = res.apparent_encoding
         res.raise_for_status()
         return res
+
+    async def _fetch_async(self, session, url, timeout=None):
+        """HTTP 요청 (비동기)"""
+        try:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout or self.timeout)) as response:
+                response.raise_for_status()
+                text = await response.text()
+                return text
+        except Exception as e:
+            print(f"HTTP 요청 실패 ({url}): {e}")
+            return None
     
     def _get_recent_post_urls(self, blog_id):
         """게시글 URL 수집 (다중 폴백)"""
@@ -133,7 +165,79 @@ class BlogAnalyzer:
             pass
         
         return []
-    
+
+    async def _get_recent_post_urls_async(self, blog_id):
+        """게시글 URL 수집 (비동기, 다중 폴백)"""
+        async with aiohttp.ClientSession(headers=self.headers) as session:
+            urls = []
+
+            # 방법 1: PC 메인 → iframe
+            try:
+                main_url = f"https://blog.naver.com/{blog_id}"
+                html = await self._fetch_async(session, main_url)
+                if html:
+                    soup = BeautifulSoup(html, 'html.parser')
+                    iframe = soup.find('iframe', id='mainFrame')
+                    if iframe and iframe.get('src'):
+                        inner_url = iframe['src']
+                        if inner_url.startswith('/'):
+                            inner_url = 'https://blog.naver.com' + inner_url
+
+                        inner_html = await self._fetch_async(session, inner_url)
+                        if inner_html:
+                            urls = self._extract_urls_from_html(inner_html, blog_id)
+                            if urls:
+                                return urls[:self.max_posts]
+            except Exception as e:
+                print(f"방법 1 실패: {e}")
+
+            # 방법 2: PostList (구형)
+            try:
+                list_url = f"https://blog.naver.com/PostList.naver?blogId={blog_id}&widgetTypeCall=true&directAccess=true"
+                html = await self._fetch_async(session, list_url)
+                if html:
+                    urls = self._extract_urls_from_html(html, blog_id)
+                    if urls:
+                        return urls[:self.max_posts]
+            except Exception as e:
+                print(f"방법 2 실패: {e}")
+
+            # 방법 3: 모바일 홈
+            try:
+                mobile_url = f"https://m.blog.naver.com/{blog_id}"
+                html = await self._fetch_async(session, mobile_url)
+                if html:
+                    urls = self._extract_urls_from_html(html, blog_id)
+                    if urls:
+                        return urls[:self.max_posts]
+            except Exception as e:
+                print(f"방법 3 실패: {e}")
+
+            # 방법 4: RSS
+            try:
+                rss_url = f"https://rss.blog.naver.com/{blog_id}.xml"
+                html = await self._fetch_async(session, rss_url)
+                if html:
+                    soup = BeautifulSoup(html, 'xml')
+                    urls = []
+                    for item in soup.find_all('item'):
+                        link = item.find('link')
+                        if link and link.text:
+                            log_nos = re.findall(r'logNo=(\d+)', link.text)
+                            if not log_nos:
+                                log_nos = re.findall(rf'/{re.escape(blog_id)}/(\d+)', link.text)
+                            if log_nos:
+                                urls.append(f"https://blog.naver.com/{blog_id}/{log_nos[0]}")
+                        if len(urls) >= self.max_posts:
+                            break
+
+                    if urls:
+                        return urls[:self.max_posts]
+            except Exception as e:
+                print(f"방법 4 실패: {e}")
+
+            return []
+
     def _extract_urls_from_html(self, html, blog_id):
         """HTML에서 게시글 URL 추출"""
         urls = []
@@ -203,7 +307,57 @@ class BlogAnalyzer:
             'link_count': post_data['link_count'],
             'issues': seo_issues + content_issues
         }
-    
+
+    async def _analyze_single_post_async(self, session, url, blog_id):
+        """개별 게시글 분석 (비동기)"""
+        # 모바일 PostView로 변환
+        mobile_url = self._to_mobile_postview(url, blog_id)
+        if not mobile_url:
+            return None
+
+        try:
+            html = await self._fetch_async(session, mobile_url)
+            if not html:
+                return None
+
+            soup = BeautifulSoup(html, 'html.parser')
+        except Exception as e:
+            print(f"게시글 파싱 실패 ({url}): {e}")
+            return None
+
+        # 데이터 추출
+        post_data = self._extract_post_data(soup, url)
+
+        # 점수 계산
+        seo_score, seo_issues = self._calculate_seo_score(post_data)
+        content_score, content_issues = self._calculate_content_score(post_data)
+
+        total_score = int(seo_score * 0.4 + content_score * 0.6)
+
+        result = {
+            'title': post_data['title'][:50] + '...' if len(post_data['title']) > 50 else post_data['title'],
+            'url': url,
+            'total_score': total_score,
+            'seo_score': seo_score,
+            'content_score': content_score,
+            'text_length': post_data['text_length'],
+            'image_count': post_data['image_count'],
+            'video_count': post_data['video_count'],
+            'hashtag_count': len(post_data['hashtags']),
+            'link_count': post_data['link_count'],
+            'issues': seo_issues + content_issues
+        }
+
+        # 포스팅 날짜 추가
+        if post_data.get('post_date'):
+            result['post_date'] = post_data['post_date']
+
+        # 조회수 추가
+        if post_data.get('view_count'):
+            result['view_count'] = post_data['view_count']
+
+        return result
+
     def _extract_post_data(self, soup, url):
         """게시글 데이터 추출"""
         # 제목
@@ -257,8 +411,58 @@ class BlogAnalyzer:
         
         # 링크
         links = soup.find_all('a', href=True)
-        
-        return {
+
+        # 포스팅 날짜 추출 (다중 소스)
+        post_date = None
+        try:
+            # 1. 메타 태그
+            date_meta = soup.find('meta', property='article:published_time')
+            if date_meta and date_meta.get('content'):
+                post_date = date_meta['content'][:10]  # YYYY-MM-DD 형식
+
+            # 2. span.se_publishDate
+            if not post_date:
+                date_span = soup.find('span', class_='se_publishDate')
+                if date_span:
+                    date_text = date_span.get_text(strip=True)
+                    # 날짜 파싱 (예: "2025.01.15." → "2025-01-15")
+                    date_match = re.search(r'(\d{4})[\.\-/](\d{1,2})[\.\-/](\d{1,2})', date_text)
+                    if date_match:
+                        year, month, day = date_match.groups()
+                        post_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+
+            # 3. time 태그
+            if not post_date:
+                time_tag = soup.find('time')
+                if time_tag and time_tag.get('datetime'):
+                    post_date = time_tag['datetime'][:10]
+        except Exception as e:
+            print(f"날짜 추출 실패: {e}")
+
+        # 조회수 추출
+        view_count = None
+        try:
+            # 1. span.count
+            count_span = soup.find('span', class_='count')
+            if count_span:
+                view_text = count_span.get_text(strip=True)
+                # "조회 1,234" → 1234
+                view_match = re.search(r'[\d,]+', view_text)
+                if view_match:
+                    view_count = int(view_match.group().replace(',', ''))
+
+            # 2. em.cnt
+            if view_count is None:
+                cnt_em = soup.find('em', class_='cnt')
+                if cnt_em:
+                    view_text = cnt_em.get_text(strip=True)
+                    view_match = re.search(r'[\d,]+', view_text)
+                    if view_match:
+                        view_count = int(view_match.group().replace(',', ''))
+        except Exception as e:
+            print(f"조회수 추출 실패: {e}")
+
+        result = {
             'title': title,
             'url': url,
             'text': content_text,
@@ -271,6 +475,14 @@ class BlogAnalyzer:
             'video_count': len(videos),
             'link_count': len(links)
         }
+
+        # 선택적 필드 추가
+        if post_date:
+            result['post_date'] = post_date
+        if view_count is not None:
+            result['view_count'] = view_count
+
+        return result
     
     def _extract_keywords(self, title, top_n=3):
         """제목에서 핵심 키워드 추출"""
