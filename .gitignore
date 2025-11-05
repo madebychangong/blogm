@@ -42,3 +42,8 @@ Thumbs.db
 
 # Project specific
 *.log
+.env
+*.json
+
+# Crawler output
+*_2*.json
