@@ -3,11 +3,13 @@
 - 검색 노출 최적화
 - 키워드+조사 제거
 - 키워드 출현 2-3회로 감소
+- AI 재구성 (선택)
 """
 
 import re
 import random
-from typing import Dict, List
+import os
+from typing import Dict, List, Optional
 import pandas as pd
 from blog_optimizer import BlogOptimizer
 
@@ -15,8 +17,29 @@ from blog_optimizer import BlogOptimizer
 class SearchOptimizer(BlogOptimizer):
     """검색 노출 최적화 (키워드 띄어쓰기 + 키워드 감소)"""
 
-    def __init__(self, forbidden_words_file='금칙어 리스트.xlsx'):
+    def __init__(self, forbidden_words_file='금칙어 리스트.xlsx', use_ai=False, gemini_api_key=None):
+        """
+        초기화
+
+        Args:
+            forbidden_words_file: 금칙어 파일 경로
+            use_ai: AI 재구성 사용 여부 (기본: False)
+            gemini_api_key: Gemini API 키 (없으면 환경변수 GEMINI_API_KEY 사용)
+        """
         super().__init__(forbidden_words_file)
+        self.use_ai = use_ai
+        self.ai_rewriter = None
+
+        # AI 재구성 활성화
+        if self.use_ai:
+            try:
+                from ai_rewriter import AIRewriter
+                self.ai_rewriter = AIRewriter(api_key=gemini_api_key)
+                print("✅ AI 재구성 모드 활성화")
+            except Exception as e:
+                print(f"⚠️ AI 재구성 초기화 실패: {e}")
+                print("   환경변수 GEMINI_API_KEY를 설정하거나 gemini_api_key 파라미터를 전달하세요.")
+                self.use_ai = False
 
     def remove_hashtag_title(self, text: str) -> str:
         """# 제목 삭제"""
@@ -136,6 +159,7 @@ class SearchOptimizer(BlogOptimizer):
         3. 키워드 출현 감소 (2-3회)
         4. 금칙어 치환
         5. AI 표현 제거
+        6. AI 재구성 (선택)
         """
         if pd.isna(text) or not text:
             return {
@@ -178,10 +202,24 @@ class SearchOptimizer(BlogOptimizer):
         # 6. 자연스러운 변형
         text = self.add_natural_variations(text)
 
-        # 7. 해시태그 생성
+        # 7. AI 재구성 (선택)
+        if self.use_ai and self.ai_rewriter:
+            try:
+                print(f"  🤖 AI 재구성 중...")
+                ai_text = self.ai_rewriter.rewrite(text, keyword)
+                if ai_text and len(ai_text) > 100:  # 유효한 결과인지 확인
+                    text = ai_text
+                    all_changes.append('✅ AI 자연스러운 재구성 완료')
+                    # AI 재구성 후 키워드 개수 재확인
+                    final_count = text.count(keyword)
+            except Exception as e:
+                print(f"  ⚠️ AI 재구성 오류: {e}")
+                all_changes.append('⚠️ AI 재구성 실패 (원본 유지)')
+
+        # 8. 해시태그 생성
         hashtags = self.generate_hashtags(keyword, brand)
 
-        # 8. 제목 생성
+        # 9. 제목 생성
         title = self.generate_title(keyword, text)
 
         return {

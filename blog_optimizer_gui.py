@@ -31,14 +31,16 @@ class BlogOptimizerGUI:
         self.root.geometry("900x700")
         self.root.resizable(True, True)
 
-        # 옵티마이저 초기화
-        self.optimizer = SearchOptimizer()
+        # 옵티마이저 초기화 (나중에 설정됨)
+        self.optimizer = None
 
         # 변수
         self.input_file = tk.StringVar()
         self.output_folder = tk.StringVar(value="자동 (입력 파일과 같은 폴더)")
         self.keyword = tk.StringVar()
         self.brand = tk.StringVar()
+        self.use_ai = tk.BooleanVar(value=False)
+        self.gemini_api_key = tk.StringVar()
 
         # UI 구성
         self.setup_ui()
@@ -125,8 +127,42 @@ class BlogOptimizerGUI:
             foreground="gray"
         ).grid(row=row+1, column=1, columnspan=2, sticky=tk.W)
 
-        # 구분선
+        # 4. AI 재구성 (선택)
         row += 2
+        ai_frame = ttk.Frame(main_frame)
+        ai_frame.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+
+        self.ai_checkbox = ttk.Checkbutton(
+            ai_frame,
+            text="🤖 AI 자연스러운 재구성 사용 (Gemini API)",
+            variable=self.use_ai,
+            command=self.toggle_ai_options
+        )
+        self.ai_checkbox.grid(row=0, column=0, sticky=tk.W)
+
+        # API 키 입력 (AI 체크 시에만 표시)
+        row += 1
+        self.api_key_frame = ttk.Frame(main_frame)
+        self.api_key_frame.grid(row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+
+        ttk.Label(self.api_key_frame, text="   API Key:", font=("맑은 고딕", 9)).grid(
+            row=0, column=0, sticky=tk.W, padx=(20, 5)
+        )
+        self.api_key_entry = ttk.Entry(self.api_key_frame, textvariable=self.gemini_api_key, width=50, show="*")
+        self.api_key_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=5)
+
+        ttk.Label(
+            self.api_key_frame,
+            text="또는 환경변수 GEMINI_API_KEY 설정",
+            font=("맑은 고딕", 8),
+            foreground="gray"
+        ).grid(row=1, column=1, sticky=tk.W, padx=5)
+
+        # 초기에는 숨김
+        self.api_key_frame.grid_remove()
+
+        # 구분선
+        row += 1
         ttk.Separator(main_frame, orient='horizontal').grid(
             row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=20
         )
@@ -192,6 +228,15 @@ class BlogOptimizerGUI:
         self.log_text.see(tk.END)
         self.root.update_idletasks()
 
+    def toggle_ai_options(self):
+        """AI 옵션 표시/숨김"""
+        if self.use_ai.get():
+            self.api_key_frame.grid()
+            self.log("🤖 AI 재구성 모드 활성화")
+        else:
+            self.api_key_frame.grid_remove()
+            self.log("ℹ️ AI 재구성 모드 비활성화")
+
     def browse_file(self):
         """파일 선택 대화상자"""
         filename = filedialog.askopenfilename(
@@ -230,6 +275,29 @@ class BlogOptimizerGUI:
 
         if not os.path.exists(self.input_file.get()):
             messagebox.showerror("오류", "파일을 찾을 수 없습니다.")
+            return
+
+        # AI 사용 시 API 키 확인
+        if self.use_ai.get():
+            api_key = self.gemini_api_key.get() or os.getenv('GEMINI_API_KEY')
+            if not api_key:
+                messagebox.showerror(
+                    "오류",
+                    "Gemini API 키가 필요합니다.\n\n"
+                    "1. API 키를 입력하거나\n"
+                    "2. 환경변수 GEMINI_API_KEY를 설정하세요."
+                )
+                return
+
+        # 옵티마이저 초기화 (AI 옵션 적용)
+        try:
+            use_ai = self.use_ai.get()
+            api_key = self.gemini_api_key.get() if self.gemini_api_key.get() else None
+            self.optimizer = SearchOptimizer(use_ai=use_ai, gemini_api_key=api_key)
+            if use_ai:
+                self.log("🤖 AI 재구성 모드로 초기화됨")
+        except Exception as e:
+            messagebox.showerror("오류", f"옵티마이저 초기화 실패:\n{str(e)}")
             return
 
         # 버튼 비활성화
