@@ -38,7 +38,6 @@ class BlogOptimizerGUI:
         self.input_file = tk.StringVar()
         self.output_folder = tk.StringVar(value="자동 (입력 파일과 같은 폴더)")
         self.keyword = tk.StringVar()
-        self.brand = tk.StringVar()
         self.target_chars = tk.IntVar(value=2000)
 
         # UI 구성
@@ -111,22 +110,7 @@ class BlogOptimizerGUI:
             foreground="gray"
         ).grid(row=row+1, column=1, columnspan=2, sticky=tk.W)
 
-        # 3. 브랜드 (선택)
-        row += 2
-        ttk.Label(main_frame, text="🏷️ 브랜드:", font=("맑은 고딕", 10)).grid(
-            row=row, column=0, sticky=tk.W, pady=5
-        )
-        ttk.Entry(main_frame, textvariable=self.brand, width=50).grid(
-            row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5
-        )
-        ttk.Label(
-            main_frame,
-            text="선택사항 (해시태그에 포함됩니다)",
-            font=("맑은 고딕", 8),
-            foreground="gray"
-        ).grid(row=row+1, column=1, columnspan=2, sticky=tk.W)
-
-        # 4. 목표 글자수
+        # 3. 목표 글자수
         row += 2
         ttk.Label(main_frame, text="📏 목표 글자수:", font=("맑은 고딕", 10)).grid(
             row=row, column=0, sticky=tk.W, pady=5
@@ -294,22 +278,17 @@ class BlogOptimizerGUI:
         # 각 행 처리
         for idx, row in df.iterrows():
             keyword = row.get('키워드', '')
-            brand = row.get('브랜드', '') or self.brand.get()
             original_text = row.get('원고', '')
 
             self.log(f"[{idx+1}/{len(df)}] {keyword} 처리 중...")
 
             # 최적화
-            result = self.optimizer.optimize_for_search(original_text, keyword, brand)
+            result = self.optimizer.optimize_for_search(original_text, keyword)
 
             # 결과 저장
             df.at[idx, '원고'] = result['optimized_text']
-            if result.get('optimized_title'):
-                df.at[idx, '제목'] = result['optimized_title']
-
             df.at[idx, '글자수(공백포함)'] = result['optimized_length']
             df.at[idx, '통키워드 반복수'] = f"{keyword} : {result['keyword_count']}"
-            df.at[idx, '추천_해시태그'] = ' '.join(['#' + tag for tag in result['hashtags'][:10]])
             df.at[idx, '최적화_변경사항'] = '\n'.join(result['changes'])
 
             self.log(f"  ✅ {result['optimized_length']}자 | 키워드: {result['keyword_count']}회")
@@ -357,8 +336,7 @@ class BlogOptimizerGUI:
         self.log(f"🔑 키워드: {keyword}")
 
         # 최적화
-        brand = self.brand.get()
-        result = self.optimizer.optimize_for_search(original_text, keyword, brand)
+        result = self.optimizer.optimize_for_search(original_text, keyword)
 
         self.log(f"✅ 최종 글자수: {result['optimized_length']}자 ({result['length_diff']:+d}자)")
         self.log(f"✅ 키워드 출현: {result['keyword_count']}회")
@@ -380,13 +358,6 @@ class BlogOptimizerGUI:
             for change in result['changes']:
                 f.write(f"{change}\n")
             f.write("\n")
-            f.write("🏷️ 추천 해시태그\n")
-            f.write("-" * 80 + "\n")
-            f.write(' '.join(['#' + tag for tag in result['hashtags'][:10]]) + "\n\n")
-            if result.get('optimized_title'):
-                f.write("📌 제목\n")
-                f.write("-" * 80 + "\n")
-                f.write(f"{result['optimized_title']}\n\n")
             f.write("=" * 80 + "\n")
             f.write("📝 최적화된 원고\n")
             f.write("=" * 80 + "\n\n")
