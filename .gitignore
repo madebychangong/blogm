@@ -42,3 +42,9 @@ Thumbs.db
 
 # Project specific
 *.log
+
+# Generated files
+*_최적화.xlsx
+check_excel.py
+check_result.py
+show_detailed_result.py
