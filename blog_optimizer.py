@@ -179,34 +179,7 @@ class BlogOptimizer:
 
         return text
 
-    def generate_title(self, keyword: str, original_text: str) -> str:
-        """SEO 최적화 제목 생성 (15-40자 권장)"""
-        if not keyword or pd.isna(keyword):
-            return ''
-
-        # 제목 템플릿 (상품 판매용)
-        templates = [
-            f"{keyword} 추천 정보 (후기 모음)",
-            f"{keyword} 어떤 게 좋을까요?",
-            f"{keyword} 정보 공유",
-            f"{keyword} 사용 경험담",
-            f"{keyword} 이거 어떤가요?",
-            f"{keyword} 관련 궁금한 점",
-            f"{keyword} 정보 찾아봤어요",
-        ]
-
-        # 랜덤으로 하나 선택
-        title = random.choice(templates)
-
-        # 15-40자 범위 확인
-        if len(title) < 15:
-            title += " (솔직 후기)"
-        elif len(title) > 40:
-            title = title[:40]
-
-        return title
-
-    def check_c_rank_criteria(self, text: str, keyword_count: int, hashtag_count: int) -> Dict:
+    def check_c_rank_criteria(self, text: str, keyword_count: int) -> Dict:
         """네이버 C랭크 기준 체크"""
         issues = []
         score = 100
@@ -246,18 +219,6 @@ class BlogOptimizer:
         else:
             issues.append(f"ℹ️ 키워드 반복 양호 ({keyword_count}회)")
 
-        # 3. 해시태그 (8-10개 권장)
-        if hashtag_count < 5:
-            issues.append(f"⚠️ 해시태그 부족 ({hashtag_count}개) - 8-10개 권장")
-            score -= 10
-        elif hashtag_count > 15:
-            issues.append(f"⚠️ 해시태그 과다 ({hashtag_count}개) - 스팸으로 인식 가능")
-            score -= 5
-        elif 8 <= hashtag_count <= 10:
-            issues.append(f"✅ 해시태그 적정 ({hashtag_count}개)")
-        else:
-            issues.append(f"ℹ️ 해시태그 양호 ({hashtag_count}개)")
-
         # 등급 산정
         if score >= 90:
             rank = 'S'
@@ -279,55 +240,13 @@ class BlogOptimizer:
             'text_length': text_length
         }
 
-    def generate_hashtags(self, keyword: str, brand: str) -> List[str]:
-        """SEO 최적화 해시태그 생성 (8-10개 권장)"""
-        hashtags = []
-
-        if not pd.isna(keyword):
-            # 메인 키워드
-            hashtags.append(keyword)
-
-            # 키워드 조각 분리
-            keyword_parts = keyword.split()
-            hashtags.extend(keyword_parts)
-
-        if not pd.isna(brand):
-            hashtags.append(brand)
-
-        # 관절/건강 관련 일반 해시태그
-        general_tags = [
-            '건강정보',
-            '건강관리',
-            '일상',
-            '후기',
-            '정보공유',
-            '추천',
-            '관절건강',
-            '건강식품'
-        ]
-
-        # 중복 제거하고 8-10개 맞추기
-        hashtags = list(dict.fromkeys(hashtags))  # 중복 제거
-
-        # 부족하면 일반 태그 추가
-        while len(hashtags) < 8:
-            tag = random.choice([t for t in general_tags if t not in hashtags])
-            hashtags.append(tag)
-
-        # 너무 많으면 자르기
-        hashtags = hashtags[:10]
-
-        return hashtags
-
-    def optimize_text(self, text: str, keyword: str = '', brand: str = '', title: str = '') -> Dict:
+    def optimize_text(self, text: str, keyword: str = '') -> Dict:
         """텍스트 전체 최적화"""
         if pd.isna(text) or not text:
             return {
                 'optimized_text': '',
-                'optimized_title': '',
                 'changes': [],
                 'keyword_count': 0,
-                'hashtags': [],
                 'c_rank_check': {}
             }
 
@@ -350,24 +269,15 @@ class BlogOptimizer:
         # 4. 자연스러운 변형
         text = self.add_natural_variations(text)
 
-        # 5. 해시태그 생성
-        hashtags = self.generate_hashtags(keyword, brand)
-
-        # 6. 제목 생성 (없는 경우)
-        if pd.isna(title) or not title:
-            title = self.generate_title(keyword, text)
-
-        # 7. C랭크 기준 체크
-        c_rank_check = self.check_c_rank_criteria(text, keyword_count, len(hashtags))
+        # 5. C랭크 기준 체크
+        c_rank_check = self.check_c_rank_criteria(text, keyword_count)
 
         return {
             'optimized_text': text,
-            'optimized_title': title,
             'original_length': len(original_text),
             'optimized_length': len(text),
             'changes': changes,
             'keyword_count': keyword_count,
-            'hashtags': hashtags,
             'c_rank_check': c_rank_check
         }
 
