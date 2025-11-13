@@ -31,7 +31,8 @@ class AIRewriter:
 
         # Gemini 설정
         genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        # Gemini 2.5 Pro 모델 사용 (사용자 확인)
+        self.model = genai.GenerativeModel('gemini-2.5-pro')
 
     def create_prompt(self, text: str, keyword: str) -> str:
         """재구성 프롬프트 생성 - 완전히 다시 쓰기!"""
