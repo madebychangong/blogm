@@ -3,7 +3,6 @@
 - 금칙어 자동 치환
 - SEO 최적화 (키워드 반복, 해시태그 등)
 - AI 느낌 제거 (문장 패턴 다양화)
-- 네이버 C랭크 기준 적용
 """
 
 import re
@@ -206,79 +205,6 @@ class BlogOptimizer:
 
         return title
 
-    def check_c_rank_criteria(self, text: str, keyword_count: int, hashtag_count: int) -> Dict:
-        """네이버 C랭크 기준 체크"""
-        issues = []
-        score = 100
-
-        text_length = len(text)
-
-        # 1. 글자수 (3000자 이상 권장)
-        if text_length < 500:
-            issues.append("⚠️ 글자수 매우 부족 (500자 미만) - 최소 2000자 권장")
-            score -= 40
-        elif text_length < 1000:
-            issues.append("⚠️ 글자수 부족 (1000자 미만) - 최소 2000자 권장")
-            score -= 30
-        elif text_length < 1500:
-            issues.append("⚠️ 글자수 부족 (1500자 미만) - 2000자 이상 권장")
-            score -= 20
-        elif text_length < 2000:
-            issues.append("ℹ️ 글자수 약간 부족 (2000자 미만) - 3000자 권장")
-            score -= 10
-        elif text_length >= 3000:
-            issues.append("✅ 글자수 충분 (3000자 이상)")
-        else:
-            issues.append("ℹ️ 글자수 양호 (2000자 이상)")
-
-        # 2. 키워드 반복 (5-8회 권장)
-        if keyword_count == 0:
-            issues.append("⚠️ 키워드 없음 - 자연스럽게 5-8회 삽입 권장")
-            score -= 30
-        elif keyword_count < 3:
-            issues.append(f"⚠️ 키워드 부족 ({keyword_count}회) - 5-8회 권장")
-            score -= 15
-        elif keyword_count > 10:
-            issues.append(f"⚠️ 키워드 과다 ({keyword_count}회) - 스팸으로 인식 가능")
-            score -= 10
-        elif 5 <= keyword_count <= 8:
-            issues.append(f"✅ 키워드 반복 적정 ({keyword_count}회)")
-        else:
-            issues.append(f"ℹ️ 키워드 반복 양호 ({keyword_count}회)")
-
-        # 3. 해시태그 (8-10개 권장)
-        if hashtag_count < 5:
-            issues.append(f"⚠️ 해시태그 부족 ({hashtag_count}개) - 8-10개 권장")
-            score -= 10
-        elif hashtag_count > 15:
-            issues.append(f"⚠️ 해시태그 과다 ({hashtag_count}개) - 스팸으로 인식 가능")
-            score -= 5
-        elif 8 <= hashtag_count <= 10:
-            issues.append(f"✅ 해시태그 적정 ({hashtag_count}개)")
-        else:
-            issues.append(f"ℹ️ 해시태그 양호 ({hashtag_count}개)")
-
-        # 등급 산정
-        if score >= 90:
-            rank = 'S'
-        elif score >= 80:
-            rank = 'A'
-        elif score >= 70:
-            rank = 'B'
-        elif score >= 60:
-            rank = 'C'
-        elif score >= 50:
-            rank = 'D'
-        else:
-            rank = 'F'
-
-        return {
-            'score': score,
-            'rank': rank,
-            'issues': issues,
-            'text_length': text_length
-        }
-
     def generate_hashtags(self, keyword: str, brand: str) -> List[str]:
         """SEO 최적화 해시태그 생성 (8-10개 권장)"""
         hashtags = []
@@ -327,8 +253,7 @@ class BlogOptimizer:
                 'optimized_title': '',
                 'changes': [],
                 'keyword_count': 0,
-                'hashtags': [],
-                'c_rank_check': {}
+                'hashtags': []
             }
 
         original_text = text
@@ -357,9 +282,6 @@ class BlogOptimizer:
         if pd.isna(title) or not title:
             title = self.generate_title(keyword, text)
 
-        # 7. C랭크 기준 체크
-        c_rank_check = self.check_c_rank_criteria(text, keyword_count, len(hashtags))
-
         return {
             'optimized_text': text,
             'optimized_title': title,
@@ -367,8 +289,7 @@ class BlogOptimizer:
             'optimized_length': len(text),
             'changes': changes,
             'keyword_count': keyword_count,
-            'hashtags': hashtags,
-            'c_rank_check': c_rank_check
+            'hashtags': hashtags
         }
 
     def optimize_excel(self, input_file: str, output_file: str = None) -> Dict:
@@ -404,20 +325,12 @@ class BlogOptimizer:
             # 변경 사항 기록
             df.at[idx, '최적화_변경사항'] = '\n'.join(result['changes'])
 
-            # C랭크 체크 결과 추가
-            c_rank = result.get('c_rank_check', {})
-            df.at[idx, 'C랭크_점수'] = c_rank.get('score', 0)
-            df.at[idx, 'C랭크_등급'] = c_rank.get('rank', 'F')
-            df.at[idx, 'C랭크_제안사항'] = '\n'.join(c_rank.get('issues', []))
-
             results.append({
                 'row': idx + 1,
                 'keyword': keyword,
                 'keyword_count': result['keyword_count'],
                 'changes_count': len(result['changes']),
-                'hashtags_count': len(result['hashtags']),
-                'c_rank_score': c_rank.get('score', 0),
-                'c_rank_grade': c_rank.get('rank', 'F')
+                'hashtags_count': len(result['hashtags'])
             })
 
         # 엑셀 저장
@@ -453,7 +366,6 @@ def main():
         print(f"  ✅ 키워드 출현: {r['keyword_count']}회")
         print(f"  ✅ 변경 사항: {r['changes_count']}건")
         print(f"  ✅ 해시태그: {r['hashtags_count']}개")
-        print(f"  📈 C랭크 점수: {r['c_rank_score']}점 ({r['c_rank_grade']}등급)")
 
     print("\n" + "=" * 80)
     print("✅ 최적화 완료!")
@@ -461,9 +373,6 @@ def main():
     print("   - 원고: 최적화된 원고")
     print("   - 제목: SEO 최적화 제목")
     print("   - 추천_해시태그: 8-10개의 추천 해시태그")
-    print("   - C랭크_점수: 네이버 C랭크 기준 점수")
-    print("   - C랭크_등급: S~F 등급")
-    print("   - C랭크_제안사항: 개선이 필요한 부분")
     print("   - 최적화_변경사항: 금칙어 치환 등 변경 내역")
     print("=" * 80 + "\n")
 
