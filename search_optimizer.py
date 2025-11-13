@@ -126,7 +126,7 @@ class SearchOptimizer(BlogOptimizer):
 
         return '\n'.join(lines)
 
-    def optimize_for_search(self, text: str, keyword: str, brand: str = '') -> Dict:
+    def optimize_for_search(self, text: str, keyword: str) -> Dict:
         """
         검색 노출 최적화
 
@@ -178,20 +178,12 @@ class SearchOptimizer(BlogOptimizer):
         # 6. 자연스러운 변형
         text = self.add_natural_variations(text)
 
-        # 7. 해시태그 생성
-        hashtags = self.generate_hashtags(keyword, brand)
-
-        # 8. 제목 생성
-        title = self.generate_title(keyword, text)
-
         return {
             'optimized_text': text,
-            'optimized_title': title,
             'original_length': original_length,
             'optimized_length': len(text),
             'keyword_count': final_count,
             'changes': all_changes,
-            'hashtags': hashtags,
             'length_diff': len(text) - original_length
         }
 
@@ -212,26 +204,22 @@ class SearchOptimizer(BlogOptimizer):
             df['키워드_출현'] = 0
         if '변경사항' not in df.columns:
             df['변경사항'] = ''
-        if '추천_해시태그' not in df.columns:
-            df['추천_해시태그'] = ''
 
         # 각 행 처리
         for idx, row in df.iterrows():
             keyword = row.get('키워드', '')
-            brand = row.get('브랜드', '')
             text = row.get('원고', '')
 
             if pd.isna(text) or not text:
                 continue
 
             # 최적화
-            result = self.optimize_for_search(text, keyword, brand)
+            result = self.optimize_for_search(text, keyword)
 
             # 결과 저장
             df.at[idx, '최적화_원고'] = result['optimized_text']
             df.at[idx, '키워드_출현'] = result['keyword_count']
             df.at[idx, '변경사항'] = '\n'.join(result['changes'])
-            df.at[idx, '추천_해시태그'] = ' '.join(['#' + tag for tag in result['hashtags'][:10]])
 
         # 저장
         df.to_excel(output_file, index=False)
