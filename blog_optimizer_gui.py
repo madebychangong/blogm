@@ -15,7 +15,7 @@ import threading
 
 # 상대 import 처리
 try:
-    from advanced_seo_optimizer import AdvancedSEOOptimizer
+    from search_optimizer import SearchOptimizer
     import pandas as pd
 except ImportError:
     messagebox.showerror("오류", "필요한 패키지가 설치되어 있지 않습니다.\npip install -r requirements.txt")
@@ -32,7 +32,7 @@ class BlogOptimizerGUI:
         self.root.resizable(True, True)
 
         # 옵티마이저 초기화
-        self.optimizer = AdvancedSEOOptimizer()
+        self.optimizer = SearchOptimizer()
 
         # 변수
         self.input_file = tk.StringVar()
@@ -68,7 +68,7 @@ class BlogOptimizerGUI:
 
         subtitle_label = ttk.Label(
             main_frame,
-            text="네이버 블로그 C랭크 기준 자동 최적화 · 2000자 자동 확장",
+            text="검색 노출 최적화 · 키워드 띄어쓰기 · 금칙어 치환",
             font=("맑은 고딕", 9)
         )
         subtitle_label.grid(row=1, column=0, columnspan=3, pady=(0, 20))
@@ -289,53 +289,30 @@ class BlogOptimizerGUI:
         self.log(f"✅ {len(df)}개 행 발견")
 
         # 출력 파일
-        output_file = input_file.replace('.xlsx', '_고급최적화.xlsx')
+        output_file = input_file.replace('.xlsx', '_검색최적화.xlsx')
 
-        results = []
-
+        # 각 행 처리
         for idx, row in df.iterrows():
             keyword = row.get('키워드', '')
             brand = row.get('브랜드', '') or self.brand.get()
             original_text = row.get('원고', '')
 
-            self.log(f"\n[{idx+1}/{len(df)}] {keyword} 처리 중...")
+            self.log(f"[{idx+1}/{len(df)}] {keyword} 처리 중...")
 
             # 최적화
-            result = self.optimizer.optimize_advanced(
-                text=original_text,
-                keyword=keyword,
-                brand=brand,
-                target_char_count=self.target_chars.get()
-            )
+            result = self.optimizer.optimize_for_search(original_text, keyword, brand)
 
             # 결과 저장
             df.at[idx, '원고'] = result['optimized_text']
-            if result['optimized_title']:
+            if result.get('optimized_title'):
                 df.at[idx, '제목'] = result['optimized_title']
 
-            final_status = result['final_status']
-            c_rank = result['c_rank_check']
-
-            df.at[idx, '글자수(공백포함)'] = final_status['char_count']
-            df.at[idx, '통키워드 반복수'] = f"{keyword} : {final_status['whole_keyword_count']}"
-
-            piece_str = '\n'.join([f"{k} : {v}" for k, v in final_status['piece_counts'].items()])
-            df.at[idx, '조각키워드 반복수'] = piece_str if piece_str else '-'
-            df.at[idx, '서브키워드 목록 수'] = final_status['subkeyword_count']
-
-            df.at[idx, '추천_해시태그'] = ' #'.join([''] + result['hashtags'])
-            df.at[idx, 'C랭크_점수'] = c_rank.get('score', 0)
-            df.at[idx, 'C랭크_등급'] = c_rank.get('rank', 'F')
-            df.at[idx, 'C랭크_제안사항'] = '\n'.join(c_rank.get('issues', []))
+            df.at[idx, '글자수(공백포함)'] = result['optimized_length']
+            df.at[idx, '통키워드 반복수'] = f"{keyword} : {result['keyword_count']}"
+            df.at[idx, '추천_해시태그'] = ' '.join(['#' + tag for tag in result['hashtags'][:10]])
             df.at[idx, '최적화_변경사항'] = '\n'.join(result['changes'])
 
-            self.log(f"  ✅ {final_status['char_count']}자 | C랭크: {c_rank['rank']}등급")
-
-            results.append({
-                'keyword': keyword,
-                'chars': final_status['char_count'],
-                'rank': c_rank['rank']
-            })
+            self.log(f"  ✅ {result['optimized_length']}자 | 키워드: {result['keyword_count']}회")
 
         # 저장
         df.to_excel(output_file, index=False)
@@ -344,11 +321,9 @@ class BlogOptimizerGUI:
         self.log("=" * 80)
         self.log("✅ 최적화 완료!")
         self.log("=" * 80)
-        for i, r in enumerate(results, 1):
-            self.log(f"[{i}] {r['keyword']}: {r['chars']}자, {r['rank']}등급")
-        self.log(f"\n💾 저장됨: {os.path.basename(output_file)}")
+        self.log(f"💾 저장됨: {os.path.basename(output_file)}")
 
-        messagebox.showinfo("완료", f"최적화가 완료되었습니다!\n\n{len(results)}개 원고 처리\n저장: {os.path.basename(output_file)}")
+        messagebox.showinfo("완료", f"최적화가 완료되었습니다!\n\n{len(df)}개 원고 처리\n저장: {os.path.basename(output_file)}")
 
     def optimize_txt(self, input_file):
         """TXT 최적화"""
@@ -383,43 +358,31 @@ class BlogOptimizerGUI:
 
         # 최적화
         brand = self.brand.get()
-        result = self.optimizer.optimize_advanced(
-            text=original_text,
-            keyword=keyword,
-            brand=brand,
-            target_char_count=self.target_chars.get()
-        )
+        result = self.optimizer.optimize_for_search(original_text, keyword, brand)
 
-        final_status = result['final_status']
-        c_rank = result['c_rank_check']
-
-        self.log(f"✅ 최종 글자수: {final_status['char_count']}자 (+{final_status['char_count'] - len(original_text)}자)")
-        self.log(f"✅ 통키워드: {final_status['whole_keyword_count']}회")
-        self.log(f"✅ C랭크: {c_rank['rank']}등급 ({c_rank['score']}점)")
+        self.log(f"✅ 최종 글자수: {result['optimized_length']}자 ({result['length_diff']:+d}자)")
+        self.log(f"✅ 키워드 출현: {result['keyword_count']}회")
 
         # 저장
         output_file = input_file.replace('.txt', '_최적화.txt')
 
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write("=" * 80 + "\n")
-            f.write("블로그 원고 최적화 결과\n")
+            f.write("블로그 원고 검색 최적화 결과\n")
             f.write("=" * 80 + "\n\n")
-            f.write("📊 SEO 분석\n")
+            f.write("📊 최적화 정보\n")
             f.write("-" * 80 + "\n")
             f.write(f"키워드: {keyword}\n")
-            f.write(f"글자수: {final_status['char_count']}자\n")
-            f.write(f"통키워드 출현: {final_status['whole_keyword_count']}회\n")
-            f.write(f"조각키워드: {final_status['piece_counts']}\n")
-            f.write(f"서브키워드: {final_status['subkeyword_count']}개\n")
-            f.write(f"C랭크: {c_rank['rank']}등급 ({c_rank['score']}점)\n\n")
+            f.write(f"글자수: {result['optimized_length']}자 ({result['length_diff']:+d}자)\n")
+            f.write(f"키워드 출현: {result['keyword_count']}회\n\n")
+            f.write("🔧 변경 사항\n")
+            f.write("-" * 80 + "\n")
+            for change in result['changes']:
+                f.write(f"{change}\n")
+            f.write("\n")
             f.write("🏷️ 추천 해시태그\n")
             f.write("-" * 80 + "\n")
-            f.write(" #".join([''] + result['hashtags']) + "\n\n")
-            f.write("💡 C랭크 제안사항\n")
-            f.write("-" * 80 + "\n")
-            for issue in c_rank['issues']:
-                f.write(f"{issue}\n")
-            f.write("\n")
+            f.write(' '.join(['#' + tag for tag in result['hashtags'][:10]]) + "\n\n")
             if result.get('optimized_title'):
                 f.write("📌 제목\n")
                 f.write("-" * 80 + "\n")
@@ -431,7 +394,7 @@ class BlogOptimizerGUI:
 
         self.log(f"\n💾 저장됨: {os.path.basename(output_file)}")
 
-        messagebox.showinfo("완료", f"최적화가 완료되었습니다!\n\n{final_status['char_count']}자\nC랭크: {c_rank['rank']}등급\n저장: {os.path.basename(output_file)}")
+        messagebox.showinfo("완료", f"최적화가 완료되었습니다!\n\n{result['optimized_length']}자\n키워드: {result['keyword_count']}회\n저장: {os.path.basename(output_file)}")
 
 
 def main():

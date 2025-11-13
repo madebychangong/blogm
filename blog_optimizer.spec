@@ -20,6 +20,8 @@ hiddenimports = [
     'tkinter.scrolledtext',
     'tkinter.ttk',
     'threading',
+    'search_optimizer',
+    'blog_optimizer',
 ]
 
 a = Analysis(
