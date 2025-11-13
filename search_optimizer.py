@@ -138,14 +138,41 @@ class SearchOptimizer(BlogOptimizer):
             if keyword in line:
                 # 이 줄의 키워드를 대명사로 교체
                 line_keyword_count = line.count(keyword)
-                if line_keyword_count > 1:
-                    # 두 번 이상 나오면 마지막 것만 제거
-                    lines[i] = line.replace(keyword, '이거', line_keyword_count - 1)
-                    removed += line_keyword_count - 1
-                elif removed < remove_count and i > 0:
-                    # 첫 줄 아니면 제거 가능
-                    lines[i] = line.replace(keyword, '이거', 1)
-                    removed += 1
+
+                # 교체할 횟수 계산
+                to_replace = min(line_keyword_count - 1, remove_count - removed) if line_keyword_count > 1 else (1 if removed < remove_count and i > 0 else 0)
+
+                if to_replace > 0:
+                    # 키워드 위치 찾기
+                    import re
+                    positions = [m.start() for m in re.finditer(re.escape(keyword), line)]
+
+                    # 뒤에서부터 교체 (앞쪽 키워드는 유지)
+                    new_line = line
+                    replaced_count = 0
+
+                    for pos in reversed(positions[1:] if line_keyword_count > 1 else positions):
+                        if replaced_count >= to_replace:
+                            break
+
+                        # 키워드 뒤에 뭐가 있는지 확인
+                        after_keyword = new_line[pos + len(keyword):pos + len(keyword) + 5] if pos + len(keyword) < len(new_line) else ""
+
+                        # "키워드 라는" → 그냥 제거 (라는 유지)
+                        if after_keyword.startswith(' 라는'):
+                            # 키워드만 제거, 공백과 '라는'은 유지하되 자연스럽게
+                            new_line = new_line[:pos] + '이런 거' + new_line[pos + len(keyword):]
+                        # "키워드를/가/는" 등 조사 → 이미 2단계에서 처리됐어야 하므로 단순 제거
+                        elif after_keyword and after_keyword[0] in ['를', '을', '가', '이', '는', '은', '에', '의']:
+                            new_line = new_line[:pos] + '이거' + new_line[pos + len(keyword):]
+                        else:
+                            # 일반적인 경우 "이거"로 교체
+                            new_line = new_line[:pos] + '이거' + new_line[pos + len(keyword):]
+
+                        replaced_count += 1
+
+                    lines[i] = new_line
+                    removed += replaced_count
 
         return '\n'.join(lines)
 
