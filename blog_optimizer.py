@@ -7,21 +7,29 @@
 
 import re
 import random
+import os
 from typing import Dict, List, Tuple
 import pandas as pd
+from forbidden_words_loader import ForbiddenWordsLoader
 
 
 class BlogOptimizer:
-    def __init__(self, forbidden_words_file='금칙어 수정사항 모음.txt'):
+    def __init__(self, forbidden_words_file='금칙어 리스트.xlsx'):
         """초기화"""
-        self.forbidden_words = self._load_forbidden_words(forbidden_words_file)
+        # 절대 경로로 변환
+        if not os.path.isabs(forbidden_words_file):
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            forbidden_words_file = os.path.join(base_dir, forbidden_words_file)
+
+        # 새로운 금칙어 로더 사용
+        self.forbidden_loader = ForbiddenWordsLoader(forbidden_words_file)
 
         # AI 느낌 나는 표현들 (다양화 필요)
         self.ai_patterns = {
             '정말 고민이 많습니다': [
-                '정말 고민되네요',
+                '정말 고민돼요',
                 '어떻게 해야 할지 모르겠어요',
-                '생각이 많아지네요'
+                '생각이 많아져요'
             ],
             '절로 나오': [
                 '자연스럽게 나오',
@@ -55,68 +63,9 @@ class BlogOptimizer:
             ]
         }
 
-    def _load_forbidden_words(self, filepath: str) -> Dict[str, str]:
-        """금칙어 파일 로드"""
-        forbidden_dict = {}
-
-        try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-
-            current_forbidden = None
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    current_forbidden = None
-                    continue
-
-                # 금칙어와 대체어 구분
-                if current_forbidden is None:
-                    current_forbidden = line
-                else:
-                    replacement = line
-
-                    # (삭제), (삭제처리) 등은 빈 문자열로
-                    if '삭제' in replacement:
-                        replacement = ''
-                    # 괄호 안의 설명 제거
-                    elif '(' in replacement:
-                        replacement = re.sub(r'\(.*?\)', '', replacement).strip()
-
-                    # "/" 또는 "," 로 구분된 여러 대체어 중 하나 랜덤 선택
-                    if ('/' in replacement or ',' in replacement) and replacement:
-                        # "/" 또는 ","로 구분
-                        separators = ['/', ',']
-                        for sep in separators:
-                            if sep in replacement:
-                                options = [opt.strip() for opt in replacement.split(sep)]
-                                options = [opt for opt in options if opt and len(opt) < 10]  # 빈 문자열 및 너무 긴 옵션 제거
-                                if options:
-                                    replacement = random.choice(options)
-                                break
-
-                    # 너무 긴 대체어는 무시 (설명문으로 판단)
-                    if len(replacement) > 15:
-                        replacement = ''
-
-                    forbidden_dict[current_forbidden] = replacement
-                    current_forbidden = None
-
-        except Exception as e:
-            print(f"금칙어 파일 로드 실패: {e}")
-
-        return forbidden_dict
-
     def replace_forbidden_words(self, text: str) -> Tuple[str, List[str]]:
-        """금칙어 치환"""
-        replaced_words = []
-
-        for forbidden, replacement in self.forbidden_words.items():
-            if forbidden in text:
-                text = text.replace(forbidden, replacement)
-                replaced_words.append(f"{forbidden} → {replacement if replacement else '(삭제)'}")
-
-        return text, replaced_words
+        """금칙어 치환 (새로운 로더 사용)"""
+        return self.forbidden_loader.replace_forbidden_words(text)
 
     def diversify_ai_patterns(self, text: str) -> Tuple[str, List[str]]:
         """AI 느낌 나는 패턴 다양화"""

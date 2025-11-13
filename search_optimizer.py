@@ -15,7 +15,7 @@ from blog_optimizer import BlogOptimizer
 class SearchOptimizer(BlogOptimizer):
     """검색 노출 최적화 (키워드 띄어쓰기 + 키워드 감소)"""
 
-    def __init__(self, forbidden_words_file='금칙어 수정사항 모음.txt'):
+    def __init__(self, forbidden_words_file='금칙어 리스트.xlsx'):
         super().__init__(forbidden_words_file)
 
     def remove_hashtag_title(self, text: str) -> str:
