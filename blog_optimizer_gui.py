@@ -27,7 +27,7 @@ class BlogOptimizerGUI:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("블로그 원고 SEO 최적화 시스템")
+        self.root.title("블로그 검색 최적화")
         self.root.geometry("900x700")
         self.root.resizable(True, True)
 
@@ -39,7 +39,6 @@ class BlogOptimizerGUI:
         self.output_folder = tk.StringVar(value="자동 (입력 파일과 같은 폴더)")
         self.keyword = tk.StringVar()
         self.brand = tk.StringVar()
-        self.target_chars = tk.IntVar(value=2000)
 
         # UI 구성
         self.setup_ui()
@@ -61,7 +60,7 @@ class BlogOptimizerGUI:
         # 타이틀
         title_label = ttk.Label(
             main_frame,
-            text="🎯 블로그 원고 SEO 최적화",
+            text="🎯 블로그 검색 최적화",
             font=("맑은 고딕", 16, "bold")
         )
         title_label.grid(row=0, column=0, columnspan=3, pady=10)
@@ -126,18 +125,8 @@ class BlogOptimizerGUI:
             foreground="gray"
         ).grid(row=row+1, column=1, columnspan=2, sticky=tk.W)
 
-        # 4. 목표 글자수
-        row += 2
-        ttk.Label(main_frame, text="📏 목표 글자수:", font=("맑은 고딕", 10)).grid(
-            row=row, column=0, sticky=tk.W, pady=5
-        )
-        char_frame = ttk.Frame(main_frame)
-        char_frame.grid(row=row, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5)
-        ttk.Entry(char_frame, textvariable=self.target_chars, width=10).grid(row=0, column=0)
-        ttk.Label(char_frame, text="자 (기본: 2000자, 네이버 C랭크 기준)").grid(row=0, column=1, sticky=tk.W, padx=5)
-
         # 구분선
-        row += 1
+        row += 2
         ttk.Separator(main_frame, orient='horizontal').grid(
             row=row, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=20
         )
@@ -191,7 +180,7 @@ class BlogOptimizerGUI:
 
         # 초기 로그
         self.log("=" * 80)
-        self.log("블로그 원고 SEO 최적화 시스템 v2.0")
+        self.log("블로그 검색 최적화 v1.0")
         self.log("=" * 80)
         self.log("✅ 시스템 준비 완료")
         self.log("📝 파일을 선택하고 '최적화 시작' 버튼을 눌러주세요")
